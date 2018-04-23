@@ -18,12 +18,15 @@ CONFIG = {
     "dark": {
         # names used by arky to initialize
         "arky": "dark",
-        "coin_in_sat": c.ARK
+        "coin_in_sat": c.ARK,
+        "testnet": True,
     },
     "test_persona": {
         # names used by arky to initialize
         "arky": "tprs",
-        "coin_in_sat": c.ARK
+        "coin_in_sat": c.ARK,
+        "testnet": True,
+
     },
     "kapu": {
         # names used by arky to initialize

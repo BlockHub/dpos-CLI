@@ -74,8 +74,8 @@ class Verbose:
     help="Set a password to ensure your keys are not stored unencrypted.")
 @click.option(
     '--verbose', '-v',
-    type=click.Choice([0, 10, 20, 30, 40, 50]),
-    default=20,
+    type=click.Choice(["0", "10", "20", "30", "40", "50"]),
+    default="20",
     help="Verbosity level")
 @click.pass_context
 def main(ctx, config_file, password, verbose):
@@ -86,7 +86,7 @@ def main(ctx, config_file, password, verbose):
         Ark
         DArk
     """
-    printer = Verbose(level=verbose)
+    printer = Verbose(level=int(verbose))
 
     filename = os.path.expanduser(config_file)
     config = CONFIG
@@ -499,7 +499,7 @@ def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip):
         payer.pay_rewardswallet(covered_fees=covered_fees, shared_percentage=shared_percentage)
         printer.log("Payment successfull.")
 
-        if tip:
+        if tip and not setting["testnet"]:
             payer.tip()
 
 
