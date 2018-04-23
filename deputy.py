@@ -14,7 +14,6 @@ import db as i
 from pid import PidFile
 import os
 import subprocess
-import time
 
 
 def load_config(ctx, network):
