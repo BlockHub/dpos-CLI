@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 import click
 import pickle
 import exceptions as e
@@ -12,6 +12,8 @@ from raven.handlers.logging import SentryHandler
 import logging
 import db as i
 from pid import PidFile
+import os
+
 
 
 def load_config(ctx, network):
@@ -118,6 +120,22 @@ def main(ctx, config_file, password, verbose):
         'printer': printer,
 
     }
+
+@main.command()
+def enable_autocomplete():
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    home = str(Path.home())
+    Path('{}/.bashrc'.format(home)).touch()
+
+    # check if we already appended the script command.
+    with open("{}/.bashrc".format(home), "r") as bashrc:
+        lines = bashrc.readlines()
+        for line in lines:
+            if "{c_dir}/deputy-complete.sh".format(c_dir=current_dir) in line:
+                return
+
+    with open("{}/.bashrc".format(home), "a") as bashrc:
+        bashrc.write("{c_dir}/deputy-complete.sh".format(c_dir=current_dir))
 
 
 @main.command()
