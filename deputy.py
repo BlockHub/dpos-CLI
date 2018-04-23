@@ -13,7 +13,8 @@ import logging
 import db as i
 from pid import PidFile
 import os
-
+import subprocess
+import time
 
 
 def load_config(ctx, network):
@@ -135,7 +136,11 @@ def enable_autocomplete():
                 return
 
     with open("{}/.bashrc".format(home), "a") as bashrc:
-        bashrc.write("{c_dir}/deputy-complete.sh".format(c_dir=current_dir))
+        bashrc.write(". {c_dir}/deputy-complete.sh".format(c_dir=current_dir))
+
+    subprocess.run("chmod u+x {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
+    subprocess.run("bash {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
+
 
 
 @main.command()
