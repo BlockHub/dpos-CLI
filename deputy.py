@@ -144,10 +144,10 @@ def enable_autocomplete(ctx):
         printer.info("Success!")
 
     printer.info("Running some commands.")
+    subprocess.run("_DEPUTY_COMPLETE=source {c_dir}/deputy > {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
     subprocess.run("chmod u+x {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
     subprocess.run("bash {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
     printer.info("Done!")
-
 
 
 @main.command()

@@ -1,2 +1,2 @@
-include .deputy-complete.sh
-include .README.md
+include deputy-complete.sh
+include README.md
