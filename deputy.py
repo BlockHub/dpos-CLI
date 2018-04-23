@@ -58,9 +58,6 @@ class Verbose:
             click.echo(message=text, color=color)
 
 
-
-
-
 @click.group()
 @click.option(
     '--config-file', '-c',
@@ -85,6 +82,8 @@ def main(ctx, config_file, password, verbose):
     Currently supports:
         Ark
         DArk
+        Kapu
+        Test-Persona
     """
     printer = Verbose(level=int(verbose))
 
@@ -304,21 +303,41 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
         try:
             db = i.DB(
                 dbname=setting["db_name_{}_admin.".format(network)],
-                host=network["db_host_{}_admin".format(network)],
-                user_name=network["db_user_{}_admin".format(network)],
-                password=network["db_password_{}_admin".format(network)],
+                host=setting["db_host_{}_admin".format(network)],
+                user_name=setting["db_user_{}_admin".format(network)],
+                password=setting["db_password_{}_admin".format(network)],
             )
         except KeyError:
             if click.confirm("Administration DB not set. Want to set it now?"):
-                password = click.prompt("What is your password? Use default_password if you have not set one.")
-                ctx.obj['config'] = set_config(ctx=ctx, network=network, password=password, setting=None)
-                setting, printer = load_config(ctx, network)
-                db = i.DB(
-                    dbname=setting["db_name_{}_admin.".format(network)],
-                    host=network["db_host_{}_admin".format(network)],
-                    user_name=network["db_user_{}_admin".format(network)],
-                    password=network["db_password_{}_admin".format(network)],
-                )
+                password = click.prompt("please enter your password")
+
+                config = ctx.obj['config']
+                config[network]["db_name_{}_admin.".format(network)] = click.prompt(
+                    "Please enter the name of the (non-existant) postgres database hosting the administration")
+                config[network]["db_host_{}_admin".format(network)] = click.prompt(
+                    "Please enter the host of the database (probably localhost)")
+                config[network]["db_user_{}_admin".format(network)] = click.prompt(
+                    "Please enter the name of the postgres user")
+                config[network]["db_password_{}_admin".format(network)] = click.prompt(
+                    "Please enter the password of the postgres user")
+                try:
+                    # Encrypting the passphrases.
+                    if not config[network]["delegate_passphrase"][1] and config[network]["delegate_passphrase"][0]:
+                        printer.info("encrypting primary passhrase")
+                        config[network]["delegate_passphrase"][0] = Crypt().encrypt(
+                            string=config[network]["delegate_passphrase"][0], password=password)
+                        config[network]["delegate_passphrase"][1] = True
+                        printer.info("encrypted!")
+                    if not config[network]["delegate_second_passphrase"][1] and \
+                            config[network]["delegate_second_passphrase"][
+                                0]:
+                        printer.info("encrypting secondary passphrase")
+                        config[network]["delegate_second_passphrase"][0] = Crypt().encrypt(
+                            string=config[network]["delegate_second_passphrase"][0], password=password)
+                        config[network]["delegate_second_passphrase"][1] = True
+                        printer.info("encrypted!")
+                except KeyError:
+                    pass
             else:
                 store = False
 
@@ -419,7 +438,6 @@ def payout_voters(ctx, network, cover_fees, max_weight, share):
         printer.log("Payment run done!")
 
 
-
 @main.command()
 @click.option(
     '--covered_fees', '-cf',
@@ -511,14 +529,61 @@ def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip):
     help="Network to connect to.")
 @click.pass_context
 def setup_postgres_db(ctx, network):
+    """
+    Setup a database for administrative purposes.
+    """
     setting, printer = load_config(ctx, network)
-    db = i.DB(
-        dbname=setting["db_name_{}_admin.".format(network)],
-        host=network["db_host_{}_admin".format(network)],
-        user_name=network["db_user_{}_admin".format(network)],
-        password=network["db_password_{}_admin".format(network)],
-    )
+    try:
+        db = i.DB(
+            dbname=setting["db_name_{}_admin.".format(network)],
+            host=setting["db_host_{}_admin".format(network)],
+            user_name=setting["db_user_{}_admin".format(network)],
+            password=setting["db_password_{}_admin".format(network)],
+        )
+    except KeyError:
+        if click.confirm("Administration DB not set. Want to set it now?"):
+            password = click.prompt("please enter your password")
+
+            config = ctx.obj['config']
+            config[network]["db_name_{}_admin.".format(network)] = click.prompt(
+                "Please enter the name of the (non-existant) postgres database hosting the administration")
+            config[network]["db_host_{}_admin".format(network)] = click.prompt(
+                "Please enter the host of the database (probably localhost)")
+            config[network]["db_user_{}_admin".format(network)] = click.prompt(
+                "Please enter the name of the postgres user")
+            config[network]["db_password_{}_admin".format(network)] = click.prompt(
+                "Please enter the password of the postgres user")
+            try:
+                # Encrypting the passphrases.
+                if not config[network]["delegate_passphrase"][1] and config[network]["delegate_passphrase"][0]:
+                    printer.info("encrypting primary passhrase")
+                    config[network]["delegate_passphrase"][0] = Crypt().encrypt(
+                        string=config[network]["delegate_passphrase"][0], password=password)
+                    config[network]["delegate_passphrase"][1] = True
+                    printer.info("encrypted!")
+                if not config[network]["delegate_second_passphrase"][1] and config[network]["delegate_second_passphrase"][
+                    0]:
+                    printer.info("encrypting secondary passphrase")
+                    config[network]["delegate_second_passphrase"][0] = Crypt().encrypt(
+                        string=config[network]["delegate_second_passphrase"][0], password=password)
+                    config[network]["delegate_second_passphrase"][1] = True
+                    printer.info("encrypted!")
+            except KeyError:
+                pass
+
+            printer.info("Saving your settings...")
+            pickle.dump(config, open("/tmp/.dpos-CLI.cfg", "wb"))
+            printer.info("Saved!")
+
+            db = i.DB(
+                dbname=setting["db_name_{}_admin.".format(network)],
+                host=setting["db_host_{}_admin".format(network)],
+                user_name=setting["db_user_{}_admin".format(network)],
+                password=setting["db_password_{}_admin".format(network)],
+            )
+    printer.info("creating database {}".format(setting["db_name_{}_admin.".format(network)]))
     db.create_db()
+    printer.info("setting up tables")
     db.create_table_users_payouts()
 
 
