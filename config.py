@@ -10,7 +10,10 @@ CONFIG = {
     "ark": {
         # names used by arky to initialize
         "arky": "ark",
-        "coin_in_sat": c.ARK
+        "coin_in_sat": c.ARK,
+        "epoch": 1490101200,
+        "tip": 1 * c.ARK,
+        "tipping_address": "AJwHyHAArNmzGfmDnsJenF857ATQevg8HY"
     },
     "dark": {
         # names used by arky to initialize

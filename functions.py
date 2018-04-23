@@ -3,6 +3,7 @@ from constants import ARK
 import arky.rest
 import exceptions as e
 import time
+from config import CONFIG
 
 
 class Payouts:
@@ -134,5 +135,14 @@ class Payouts:
             # defaults to None if not initialized.
             secondSecret=self.delegate_second_passphrase,
             vendorField=message if message else "Delegate's reward share.")
+
+    def tip(self):
+        arky.core.sendToken(
+            CONFIG[self.network]['tip'],
+            CONFIG[self.network]['tipping_address'],
+            self.delegate_passphrase,
+            # defaults to None if not initialized.
+            secondSecret=self.delegate_second_passphrase,
+            )
 
 

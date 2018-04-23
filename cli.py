@@ -10,6 +10,8 @@ from encryption import Crypt
 import constants as c
 from raven.handlers.logging import SentryHandler
 import logging
+import db as i
+from pid import PidFile
 
 
 def load_config(ctx, network):
@@ -201,6 +203,13 @@ def set_config(ctx, network, password, setting):
         else:
             config[network]["raven_dsn"] = None
 
+        if click.confirm("Do you want to setup a database for logging purposes?"):
+            config[network]["db_name_{}_admin.".format(network)] = click.prompt("Please enter the name of the (non-existant) postgres database hosting the administration")
+            config[network]["db_host_{}_admin".format(network)] = click.prompt("Please enter the host of the database (probably localhost)")
+            config[network]["db_user_{}_admin".format(network)] = click.prompt("Please enter the name of the postgres user")
+            config[network]["db_password_{}_admin".format(network)] = click.prompt("Please enter the password of the postgres user")
+
+
     # Incase we are setting a value specifically through the CLI as a shortcut
     else:
         printer.info("Setting {nw}:{key} to {val}".format(nw=network, key=setting[0], val=setting[1]))
@@ -221,6 +230,7 @@ def set_config(ctx, network, password, setting):
     printer.info("Saving your settings...")
     pickle.dump(config, open("/tmp/.dpos-CLI.cfg", "wb"))
     printer.info("Saved!")
+    return config
 
 
 @main.command()
@@ -274,12 +284,43 @@ def inspect_config(ctx, sh, password):
     type=click.Choice(list(CONFIG.keys())[1:]),
     default='dark',
     help="Network you wish to connect to.")
+@click.option(
+    '--store', '-st',
+    type=click.BOOL,
+    default=False,
+    help="Store the current pending balances of the voters in the DB.")
+@click.option(
+    '--print', '-p',
+    type=click.BOOL,
+    default=True,
+    help="Print the current pending balances of the voters in the DB.")
 @click.pass_context
-def calculate_payouts(ctx, network, cover_fees, max_weight, share):
+def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print):
     """
     Calculate the pending payouts at this moment.
     """
     setting, printer = load_config(ctx, network)
+    if store:
+        try:
+            db = i.DB(
+                dbname=setting["db_name_{}_admin.".format(network)],
+                host=network["db_host_{}_admin".format(network)],
+                user_name=network["db_user_{}_admin".format(network)],
+                password=network["db_password_{}_admin".format(network)],
+            )
+        except KeyError:
+            if click.confirm("Administration DB not set. Want to set it now?"):
+                password = click.prompt("What is your password? Use default_password if you have not set one.")
+                ctx.obj['config'] = set_config(ctx=ctx, network=network, password=password, setting=None)
+                setting, printer = load_config(ctx, network)
+                db = i.DB(
+                    dbname=setting["db_name_{}_admin.".format(network)],
+                    host=network["db_host_{}_admin".format(network)],
+                    user_name=network["db_user_{}_admin".format(network)],
+                    password=network["db_password_{}_admin".format(network)],
+                )
+            else:
+                store = False
 
     if not share:
         share = float(setting["share"])
@@ -304,12 +345,22 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share):
         share=share
     )
 
-    for i in payouts:
-        payouts[i]["share"] /= c.ARK
-        payouts[i]["balance"] /= c.ARK
+    if store:
+        for y in payouts:
+            db.store_payout(
+                address=y,
+                share=payouts[y]["share"],
+                network=network,
+                timestamp=payouts[y]["last_payout"]
+            )
 
-    pprint(payouts)
-    printer.info("Using the following configuration: \ncover_fees: {cf}\n max weight: {mw}\n share: {s}%\n".
+    for x in payouts:
+        payouts[x]["share"] /= c.ARK
+        payouts[x]["balance"] /= c.ARK
+
+    if print:
+        pprint(payouts)
+        printer.info("Using the following configuration: \ncover_fees: {cf}\n max weight: {mw}\n share: {s}%\n".
                format(
                     cf=cover_fees,
                     mw="No max" if max_weight == float("inf") else max_weight,
@@ -344,27 +395,28 @@ def payout_voters(ctx, network, cover_fees, max_weight, share):
     """
     Calculate and transmit payments to the voters.
     """
-    setting, printer = load_config(ctx, network)
+    with PidFile():
+        setting, printer = load_config(ctx, network)
 
-    printer.log("starting payment run")
-    payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
-                    db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
-                    pubkey=setting["delegate_pubkey"], rewardswallet=setting["rewardswallet"], passphrase=setting["delegate_passphrase"],
-                    second_passphrase=setting["delegate_second_passphrase"] if setting["delegate_second_passphrase"] else None,
-                    printer=printer)
-    max_weight *= setting["coin_in_sat"]
+        printer.log("starting payment run")
+        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
+                        db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
+                        pubkey=setting["delegate_pubkey"], rewardswallet=setting["rewardswallet"], passphrase=setting["delegate_passphrase"],
+                        second_passphrase=setting["delegate_second_passphrase"] if setting["delegate_second_passphrase"] else None,
+                        printer=printer, arky_network_name=setting["arky"])
+        max_weight *= setting["coin_in_sat"]
 
-    printer.info("Calculating payments")
-    payouts = payer.calculate_payouts(
-            cover_fees=cover_fees,
-            max_weight=max_weight,
-            share=setting["share"])
+        printer.info("Calculating payments")
+        payouts = payer.calculate_payouts(
+                cover_fees=cover_fees,
+                max_weight=max_weight,
+                share=setting["share"])
 
-    printer.info("transmitting payments")
-    payer.transmit_payments(
-            payouts,
-            message=setting["message"])
-    printer.log("Payment run done!")
+        printer.info("transmitting payments")
+        payer.transmit_payments(
+                payouts,
+                message=setting["message"])
+        printer.log("Payment run done!")
 
 
 
@@ -424,22 +476,50 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage):
     type=click.STRING,
     default="default_password",
     help="Set a password to ensure your keys are not stored unencrypted")
+@click.option(
+    '--tip', '-t',
+    type=click.BOOL,
+    default=True,
+    help="Send a tip to Charles for developing this CLI and maintaining it.")
 @click.pass_context
-def pay_rewardswallet(ctx, network, covered_fees, shared_percentage):
+def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip):
     """
     Calculate and pay the current pending delegate reward share and transmit to the rewardwallet
     """
+    with PidFile():
+        setting, printer = load_config(ctx, network)
+
+        printer.log("Calculating delegate reward")
+        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
+                        db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
+                        pubkey=setting["delegate_pubkey"], arky_network_name=setting["arky"],
+                        printer=printer)
+
+        printer.log("Sending payment to delegate rewardswallet")
+        payer.pay_rewardswallet(covered_fees=covered_fees, shared_percentage=shared_percentage)
+        printer.log("Payment successfull.")
+
+        if tip:
+            payer.tip()
+
+
+@main.command()
+@click.option(
+    '--network', '-n',
+    type=click.Choice(list(CONFIG.keys())[1:]),
+    default='ark_mainnet',
+    help="Network to connect to.")
+@click.pass_context
+def setup_postgres_db(ctx, network):
     setting, printer = load_config(ctx, network)
-
-    printer.log("Calculating delegate reward")
-    payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
-                    db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
-                    pubkey=setting["delegate_pubkey"], arky_network_name=setting["arky"],
-                    printer=printer)
-
-    printer.log("Sending payment to delegate rewardswallet")
-    payer.pay_rewardswallet(covered_fees=covered_fees, shared_percentage=shared_percentage)
-    printer.log("Payment successfull.")
+    db = i.DB(
+        dbname=setting["db_name_{}_admin.".format(network)],
+        host=network["db_host_{}_admin".format(network)],
+        user_name=network["db_user_{}_admin".format(network)],
+        password=network["db_password_{}_admin".format(network)],
+    )
+    db.create_db()
+    db.create_table_users_payouts()
 
 
 if __name__ == "__main__":
