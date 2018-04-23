@@ -14,6 +14,8 @@ import db as i
 from pid import PidFile
 import os
 import subprocess
+import help_texts as h
+import validators as v
 
 
 def load_config(ctx, network):
@@ -65,17 +67,18 @@ class Verbose:
     '--config-file', '-c',
     type=click.Path(),
     default='/tmp/.dpos-CLI.cfg',
-    help="persistent configuration file path.")
+    help=h.CONFIG_FILE)
 @click.option(
     '--password', '-p',
     type=click.STRING,
-    default="default_password",
-    help="Set a password to ensure your keys are not stored unencrypted.")
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.option(
     '--verbose', '-v',
     type=click.Choice(["0", "10", "20", "30", "40", "50"]),
     default="20",
-    help="Verbosity level")
+    help=h.VERBOSE)
 @click.pass_context
 def main(ctx, config_file, password, verbose):
     """
@@ -155,17 +158,18 @@ def enable_autocomplete(ctx):
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
     default=None,
-    help="Network you wish to set.")
+    help=h.NETWORK)
 @click.option(
     '--setting', '-s',
     type=click.STRING,
     nargs=2,
-    help="Setting name + value you wish to specifically set.")
+    help=h.SETTING)
 @click.option(
     '--password', '-p',
     type=click.STRING,
-    default="default_password",
-    help="Set a password to ensure your keys are not stored unencrypted")
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.pass_context
 def set_config(ctx, network, password, setting):
     """
@@ -190,7 +194,7 @@ def set_config(ctx, network, password, setting):
         config[network]["db_name"] = click.prompt("Please enter the name of the postgres database hosting the network")
         config[network]["db_host"] = click.prompt("Please enter the host of the database (probably localhost)")
         config[network]["db_user"] = click.prompt("Please enter the name of the postgres user")
-        config[network]["db_password"] = click.prompt("Please enter the password of the postgres user")
+        config[network]["db_password"] = click.prompt("Please enter the password of the postgres user", hide_input=True)
 
         config[network]["delegate_address"] = click.prompt("Please enter your delegate address")
         config[network]["delegate_pubkey"] = click.prompt("Please enter your delegate pubkey")
@@ -206,15 +210,15 @@ def set_config(ctx, network, password, setting):
             config[network]["delegate_second_passphrase"] = None, None
 
         config[network]["share"] = click.prompt("Please enter your share percentage as a ratio (100% = 1, 50% = 0.5)", type=float)
-        if config[network]["share"] > 1:
-            config[network]["share"] = click.prompt("MAKE SURE YOUR SHARE IS LESS THAN 1. Please enter your share percentage as a ratio (100% = 1, 50% = 0.5)", type=float)
+        v.share_validator(None, None, config[network]["share"])
 
-            config[network]["max_voter_balance"] = ARK * click.prompt("Please enter the max balance that a voter may have in Ark (not arktoshi), "
+        config[network]["max_weight"] = ARK * click.prompt("Please enter the max balance that a voter may have in Ark (not arktoshi), "
                                                            "use 'inf' if you do not want to set a maximum (remaining staking reward gets distributed over other voters", type=float)
-        if click.confirm("Do you wish to cover transaction fees for your voters?"):
-            config[network]["cover_fees"] = True
-        else:
-            config[network]["cover_fees"] = False
+        config[network]["cover_fees"] = click.confirm("Do you wish to cover transaction fees for your voters?")
+        config[network]["min_share"] = click.prompt("What is the minimum built up balance a voter needs before receiving a payout?", type=float)
+        config[network]["rewards_wallet"] = click.prompt("To which address should the rewards be sent?", type=str)
+
+
 
         config[network]["message"] = click.prompt("Enter a message to send to your voters on payouts (if you don't want to send a message, leave it empty)")
 
@@ -236,7 +240,7 @@ def set_config(ctx, network, password, setting):
             config[network]["db_name_{}_admin.".format(network)] = click.prompt("Please enter the name of the (non-existant) postgres database hosting the administration")
             config[network]["db_host_{}_admin".format(network)] = click.prompt("Please enter the host of the database (probably localhost)")
             config[network]["db_user_{}_admin".format(network)] = click.prompt("Please enter the name of the postgres user")
-            config[network]["db_password_{}_admin".format(network)] = click.prompt("Please enter the password of the postgres user")
+            config[network]["db_password_{}_admin".format(network)] = click.prompt("Please enter the password of the postgres user", hide_input=True)
 
 
     # Incase we are setting a value specifically through the CLI as a shortcut
@@ -267,14 +271,9 @@ def set_config(ctx, network, password, setting):
     '--show_secret', '-sh',
     type=click.BOOL,
     default=False,
-    help="Show the passphrase.")
-@click.option(
-    '--password', '-p',
-    type=click.STRING,
-    default="default_password",
-    help="Set a password to ensure your keys are not stored unencrypted")
+    help=h.SHOW_SECRET)
 @click.pass_context
-def inspect_config(ctx, sh, password):
+def inspect_config(ctx, sh):
     """
     Check my previously set configurations.
     """
@@ -297,38 +296,47 @@ def inspect_config(ctx, sh, password):
     '--cover_fees', '-cf',
     type=click.BOOL,
     default=False,
-    help="Cover the fees of each payout transaction.")
+    help=h.COVER_FEES)
 @click.option(
     '--max_weight', '-mw',
     type=click.FLOAT,
     default=float("inf"),
-    help="Maximum allowed voter balance.",)
+    help=h.MAX_WEIGHT,)
 @click.option(
     '--share', '-s',
     type=click.FLOAT,
+    callback=v.share_validator,
     default=None,
-    help="Percentage the voters receive (95 means the delegate keep 5%)")
+    help=h.SHARE)
 @click.option(
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
-    default='dark',
-    help="Network you wish to connect to.")
+    prompt=True,
+    help=h.NETWORK)
 @click.option(
     '--store', '-st',
     type=click.BOOL,
     default=False,
-    help="Store the current pending balances of the voters in the DB.")
+    help=h.STORE)
 @click.option(
     '--print', '-p',
     type=click.BOOL,
     default=True,
-    help="Print the current pending balances of the voters in the DB.")
+    help=h.PRINT)
 @click.pass_context
 def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print):
     """
     Calculate the pending payouts at this moment.
     """
     setting, printer = load_config(ctx, network)
+
+    if cover_fees is None:
+        cover_fees = setting["share"]
+    if max_weight is None:
+        max_weight = setting["max_weight"]
+    if share is None:
+        share = setting["share"]
+
     if store:
         try:
             db = i.DB(
@@ -339,7 +347,7 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
             )
         except KeyError:
             if click.confirm("Administration DB not set. Want to set it now?"):
-                password = click.prompt("please enter your password")
+                password = click.prompt("please enter your password", hide_input=True)
 
                 config = ctx.obj['config']
                 config[network]["db_name_{}_admin.".format(network)] = click.prompt(
@@ -349,7 +357,7 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
                 config[network]["db_user_{}_admin".format(network)] = click.prompt(
                     "Please enter the name of the postgres user")
                 config[network]["db_password_{}_admin".format(network)] = click.prompt(
-                    "Please enter the password of the postgres user")
+                    "Please enter the password of the postgres user", hide_input=True)
                 try:
                     # Encrypting the passphrases.
                     if not config[network]["delegate_passphrase"][1] and config[network]["delegate_passphrase"][0]:
@@ -370,9 +378,6 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
                     pass
             else:
                 store = False
-
-    if not share:
-        share = float(setting["share"])
 
     calculator = Payouts(
         db_name=setting["db_name"],
@@ -418,37 +423,55 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
 
 @main.command()
 @click.option(
+    '--message', '-m',
+    type=click.STRING,
+    default=None,
+    help=h.MESSAGE)
+@click.option(
+    '--min_share', '-ms',
+    type=click.FLOAT,
+    default=None,
+    help=h.MIN_SHARE)
+@click.option(
     '--cover_fees', '-cf',
     type=click.BOOL,
-    default=True)
+    default=None,
+    help=h.COVER_FEES)
 @click.option(
     '--max_weight', '-mw',
     type=click.FLOAT,
-    default=float("inf"))
+    default=None,
+    help=h.MAX_WEIGHT)
 @click.option(
     '--share', '-s',
     type=click.FLOAT,
-    default=0)
+    callback=v.share_validator,
+    default=None,
+    help=h.SHARE)
 @click.option(
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
-    default='ark_mainnet',
-    help="Network to connect to.")
-@click.option(
-    '--password', '-p',
-    type=click.STRING,
-    default="default_password",
-    help="Set a password to ensure your keys are not stored unencrypted")
+    prompt=True,
+    help=h.NETWORK)
 @click.pass_context
-def payout_voters(ctx, network, cover_fees, max_weight, share):
+def payout_voters(ctx, network, cover_fees, max_weight, share, min_share, message):
     """
     Calculate and transmit payments to the voters.
     """
-    with PidFile():
-        setting, printer = load_config(ctx, network)
+    setting, printer = load_config(ctx, network)
 
+    if cover_fees is None:
+        cover_fees = setting["share"]
+    if min_share is None:
+        min_share = setting["min_share"]
+    if max_weight is None:
+        max_weight = setting["max_weight"]
+    if message is None:
+        message = setting["message"]
+
+    with PidFile():
         printer.log("starting payment run")
-        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
+        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                         db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
                         pubkey=setting["delegate_pubkey"], rewardswallet=setting["rewardswallet"], passphrase=setting["delegate_passphrase"],
                         second_passphrase=setting["delegate_second_passphrase"] if setting["delegate_second_passphrase"] else None,
@@ -459,12 +482,14 @@ def payout_voters(ctx, network, cover_fees, max_weight, share):
         payouts = payer.calculate_payouts(
                 cover_fees=cover_fees,
                 max_weight=max_weight,
-                share=setting["share"])
+                share=share)
 
         printer.info("transmitting payments")
         payer.transmit_payments(
                 payouts,
-                message=setting["message"])
+                message=message,
+                min_share=min_share,
+        )
         printer.log("Payment run done!")
 
 
@@ -472,29 +497,42 @@ def payout_voters(ctx, network, cover_fees, max_weight, share):
 @click.option(
     '--covered_fees', '-cf',
     type=click.BOOL,
-    default=True,
-    help="Were payout fees covered during the previous payment runs? (in between delegate reward payouts)",)
+    default=None,
+    help=h.COVERED_FEES,)
 @click.option(
     '--shared_percentage', '-s',
     type=click.FLOAT,
-    default=0,
-    help="Shared percentage used during the previous runs (in between delegate reward payouts)")
+    callback=v.share_validator,
+    default=None,
+    help=h.SHARED_PERCENTAGE)
+@click.option(
+    '--rewards_wallet', '-rw',
+    type=click.STRING,
+    default=None,
+    help=h.REWARDS_WALLET,)
 @click.option(
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
-    default='ark_mainnet',
-    help="Network to connect to.")
+    prompt=True,
+    help=h.NETWORK)
 @click.pass_context
-def check_delegate_reward(ctx, network, covered_fees, shared_percentage):
+def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards_wallet):
     """
     Calculate the pending delegate reward.
     """
     setting, printer = load_config(ctx, network)
 
-    calculator = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
+    if covered_fees is None:
+        covered_fees = setting["cover_fees"]
+    if shared_percentage is None:
+        shared_percentage = setting["share"]
+    if rewards_wallet is None:
+        rewards_wallet = setting["rewards_wallet"]
+
+    calculator = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                          db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
                          pubkey=setting["delegate_pubkey"], arky_network_name=setting["arky"],
-                         printer=printer)
+                         printer=printer, rewardswallet=rewards_wallet)
 
     delegate_share = calculator.calculate_delegate_share(
         covered_fees=covered_fees,
@@ -507,41 +545,50 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage):
 @click.option(
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
-    default='ark_mainnet',
-    help="Network to connect to.")
+    prompt=True,
+    help=h.NETWORK)
 @click.option(
     '--covered_fees', '-cf',
     type=click.BOOL,
-    default=True,
-    help="Were payout fees covered during the previous payment runs? (in between delegate reward payouts)",)
+    default=None,
+    help=h.COVERED_FEES)
 @click.option(
     '--shared_percentage', '-s',
     type=click.FLOAT,
-    default=0,
-    help="Shared percentage used during the previous runs (in between delegate reward payouts)")
+    callback=v.share_validator,
+    default=None,
+    help=h.SHARED_PERCENTAGE)
 @click.option(
-    '--password', '-p',
+    '--rewards_wallet', '-rw',
     type=click.STRING,
-    default="default_password",
-    help="Set a password to ensure your keys are not stored unencrypted")
+    default=None,
+    help=h.REWARDS_WALLET)
 @click.option(
     '--tip', '-t',
     type=click.BOOL,
     default=True,
-    help="Send a tip to Charles for developing this CLI and maintaining it.")
+    help=h.TIP)
 @click.pass_context
-def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip):
+def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip, rewards_wallet):
     """
     Calculate and pay the current pending delegate reward share and transmit to the rewardwallet
     """
+    setting, printer = load_config(ctx, network)
+
+    if covered_fees is None:
+        covered_fees = setting["cover_fees"]
+    if shared_percentage is None:
+        shared_percentage = setting["share"]
+    if rewards_wallet is None:
+        rewards_wallet = setting["rewards_wallet"]
+
     with PidFile():
-        setting, printer = load_config(ctx, network)
 
         printer.log("Calculating delegate reward")
-        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_pw"],
+        payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                         db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
                         pubkey=setting["delegate_pubkey"], arky_network_name=setting["arky"],
-                        printer=printer)
+                        printer=printer, rewardswallet=rewards_wallet)
 
         printer.log("Sending payment to delegate rewardswallet")
         payer.pay_rewardswallet(covered_fees=covered_fees, shared_percentage=shared_percentage)
@@ -555,8 +602,8 @@ def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip):
 @click.option(
     '--network', '-n',
     type=click.Choice(list(CONFIG.keys())[1:]),
-    default='ark_mainnet',
-    help="Network to connect to.")
+    prompt=True,
+    help=h.NETWORK)
 @click.pass_context
 def setup_postgres_db(ctx, network):
     """
@@ -572,7 +619,7 @@ def setup_postgres_db(ctx, network):
         )
     except KeyError:
         if click.confirm("Administration DB not set. Want to set it now?"):
-            password = click.prompt("please enter your password")
+            password = click.prompt("please enter your password", hide_input=True)
 
             config = ctx.obj['config']
             config[network]["db_name_{}_admin.".format(network)] = click.prompt(
@@ -582,7 +629,7 @@ def setup_postgres_db(ctx, network):
             config[network]["db_user_{}_admin".format(network)] = click.prompt(
                 "Please enter the name of the postgres user")
             config[network]["db_password_{}_admin".format(network)] = click.prompt(
-                "Please enter the password of the postgres user")
+                "Please enter the password of the postgres user", hide_input=True)
             try:
                 # Encrypting the passphrases.
                 if not config[network]["delegate_passphrase"][1] and config[network]["delegate_passphrase"][0]:
