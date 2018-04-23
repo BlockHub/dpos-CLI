@@ -1,7 +1,9 @@
-#dpos-deputy
+# dpos-deputy
+
 Howdy delegate! You have just been deputized!
 
-###Installation
+### Installation
+
 Inside your python 3.6 virtual env:
 
 ```bash
@@ -10,14 +12,15 @@ pip install dpos-deputy
 
 Deputy requires running ark-node instances/other network nodes like Kapu or Persona to function.
 
-###Initial setup
+### Initial setup
+
 Start out by enabling autocompletion for an easier time.
 
 ```bash
 deputy enable_autocomplete
 ```
 
-###Help
+### Help
 
 Use flags to figure out what the commands do.
 
@@ -25,7 +28,7 @@ Use flags to figure out what the commands do.
 deputy --help
 ```
 
-###Starting out
+### Starting out
 Start out by setting your configurations for further use.
 
 ```bash
