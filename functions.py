@@ -23,6 +23,7 @@ class Payouts:
         self.db_pw = db_pw
         self.rewardswallet = rewardswallet
         self.printer = printer
+        self.arky_network_name = arky_network_name
 
     def calculate_raw_payouts(self, max_weight, blacklist):
         legacy.set_connection(
@@ -40,9 +41,6 @@ class Payouts:
         return legacy.Delegate.trueshare(max_weight=max_weight, blacklist=blacklist)
 
     def format_raw_payouts(self, payouts_dict, cover_fees, share):
-        if float(share) > 1:
-            raise e.ShareTooHigh("A share higher than 1 will result in insufficient funds when paying the voters.")
-
         self.printer.debug("formatting raw payouts")
         for i in payouts_dict:
             if not cover_fees:
@@ -55,17 +53,20 @@ class Payouts:
         raw = self.calculate_raw_payouts(max_weight, blacklist)[0]
         return self.format_raw_payouts(raw, cover_fees=cover_fees, share=share)
 
-    def transmit_payments(self, payouts, message):
+    def transmit_payments(self, payouts, message, min_share):
         self.printer.debug("connecting to network: {}".format(self.network))
-        arky.rest.use(self.network)
+        arky.rest.use(self.arky_network_name)
         for ark_address in payouts:
-            res = arky.core.sendToken(payouts[ark_address]["share"], ark_address, self.delegate_passphrase,
-                                secondSecret=self.delegate_second_passphrase if self.delegate_second_passphrase else None,
-                                vendorField=message)
-            if res["success"]:
-                self.printer.debug(res)
+            if payouts[ark_address]["share"] > min_share:
+                res = arky.core.sendToken(payouts[ark_address]["share"], ark_address, self.delegate_passphrase,
+                                    secondSecret=self.delegate_second_passphrase if self.delegate_second_passphrase else None,
+                                    vendorField=message)
+                if res["success"]:
+                    self.printer.debug(res)
+                else:
+                    self.printer.warn(res)
             else:
-                self.printer.warn(res)
+                self.printer.debug("Insufficient built up balance for {}".format(payouts[ark_address]))
 
     def pay_voters(self, cover_fees, max_weight, share, message=None):
         self.printer.debug("calculating voter payouts")
@@ -124,6 +125,7 @@ class Payouts:
         return delegate_share
 
     def pay_rewardswallet(self, covered_fees, shared_percentage, message=None):
+        arky.rest.use(self.arky_network_name)
         share = self.calculate_delegate_share(
             covered_fees=covered_fees,
             shared_percentage=shared_percentage)
@@ -137,6 +139,7 @@ class Payouts:
             vendorField=message if message else "Delegate's reward share.")
 
     def tip(self):
+        arky.rest.use(self.arky_network_name)
         arky.core.sendToken(
             CONFIG[self.network]['tip'],
             CONFIG[self.network]['tipping_address'],
