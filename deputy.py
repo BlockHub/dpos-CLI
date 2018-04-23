@@ -123,7 +123,10 @@ def main(ctx, config_file, password, verbose):
     }
 
 @main.command()
-def enable_autocomplete():
+@click.pass_context
+def enable_autocomplete(ctx):
+    printer = ctx.obj['printer']
+
     current_dir = os.path.dirname(os.path.realpath(__file__))
     home = str(Path.home())
     Path('{}/.bashrc'.format(home)).touch()
@@ -133,13 +136,18 @@ def enable_autocomplete():
         lines = bashrc.readlines()
         for line in lines:
             if "{c_dir}/deputy-complete.sh".format(c_dir=current_dir) in line:
+                printer.warn("Already edited .bashrc!")
                 return
 
     with open("{}/.bashrc".format(home), "a") as bashrc:
+        printer.info("Editing .bashrc")
         bashrc.write(". {c_dir}/deputy-complete.sh".format(c_dir=current_dir))
+        printer.info("Success!")
 
+    printer.info("Running some commands.")
     subprocess.run("chmod u+x {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
     subprocess.run("bash {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
+    printer.info("Done!")
 
 
 
@@ -257,7 +265,7 @@ def set_config(ctx, network, password, setting):
 
 @main.command()
 @click.option(
-    '--show_secret', '--sh',
+    '--show_secret', '-sh',
     type=click.BOOL,
     default=False,
     help="Show the passphrase.")
@@ -415,7 +423,7 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
     type=click.BOOL,
     default=True)
 @click.option(
-    '--max_weight', '-cf',
+    '--max_weight', '-mw',
     type=click.FLOAT,
     default=float("inf"))
 @click.option(
