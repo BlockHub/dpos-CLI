@@ -7,7 +7,7 @@ def readme():
 
 setup(
     name='dpos-deputy',
-    version='0.0.3',
+    version='0.0.17',
     packages=[''],
     long_description=readme(),
     url='https://github.com/BlockHub/dpos-deputy',
@@ -16,7 +16,7 @@ setup(
     author_email='karel@blockhub.nl',
     description='CLI for managing dpos delegates',
     install_requires=[
-        'Click', 'Arky==1.3.1', 'dpostools==0.1.0', 'pid',
+        'Click', 'Arky==1.3.1', 'dpostools', 'pid',
         'psycopg2-binary', 'raven', 'simple-crypt', 'pycrypto',
         'markdown'
     ],
