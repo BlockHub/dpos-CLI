@@ -16,6 +16,12 @@ sudo python3.6 get-pip.py
 sudo pip3.6 install virtualenv
 ```
 
+If you get an error related to hidapi or gcc, try this:
+```commandline
+sudo apt-get install gcc
+sudo apt install libudev-dev libusb-1.0-0-dev
+```
+
 Create a virtual environment (replace myvirtualenv with whatever seems appriopriate, for example deputy)
 
 ```commandline
