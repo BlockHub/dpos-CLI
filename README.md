@@ -15,7 +15,6 @@ Deputy requires running ark-node instances/other network nodes like Kapu or Pers
 ### Initial setup
 
 Start out by enabling autocompletion for an easier time.
-*Doesn't work at the moment. Pull requests accepted.*
 
 ```bash
 deputy enable_autocomplete
