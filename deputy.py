@@ -12,10 +12,14 @@ from raven.handlers.logging import SentryHandler
 import logging
 import db as i
 from pid import PidFile
-import os
 import subprocess
 import help_texts as h
 import validators as v
+import os
+
+
+def bash_command(cmd):
+    subprocess.Popen(['/bin/bash', '-c', cmd])
 
 
 def load_config(ctx, network):
@@ -128,8 +132,6 @@ def main(ctx, config_file, password, verbose):
 @click.pass_context
 def enable_autocomplete(ctx):
     printer = ctx.obj['printer']
-
-    current_dir = os.path.dirname(os.path.realpath(__file__))
     home = str(Path.home())
     Path('{}/.bashrc'.format(home)).touch()
 
@@ -137,19 +139,25 @@ def enable_autocomplete(ctx):
     with open("{}/.bashrc".format(home), "r") as bashrc:
         lines = bashrc.readlines()
         for line in lines:
-            if "{c_dir}/deputy-complete.sh".format(c_dir=current_dir) in line:
+            if "{home}/deputy-complete.sh".format(home=home) in line:
                 printer.warn("Already edited .bashrc!")
+                printer.info("Running some commands.")
+                subprocess.run("_DEPUTY_COMPLETE=source deputy > {home}/deputy-complete.sh".format(home=home),
+                               shell=True)
+                subprocess.run("chmod u+x {home}/deputy-complete.sh".format(home=home), shell=True)
+                bash_command("{home}/deputy-complete.sh".format(home=home))
+                printer.info("Done!")
                 return
 
     with open("{}/.bashrc".format(home), "a") as bashrc:
         printer.info("Editing .bashrc")
-        bashrc.write(". {c_dir}/deputy-complete.sh".format(c_dir=current_dir))
+        bashrc.write(". {home}/deputy-complete.sh".format(home=home))
         printer.info("Success!")
 
     printer.info("Running some commands.")
-    subprocess.run("_DEPUTY_COMPLETE=source {c_dir}/deputy > {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
-    subprocess.run("chmod u+x {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
-    subprocess.run("bash {c_dir}/deputy-complete.sh".format(c_dir=current_dir), shell=True)
+    subprocess.run("_DEPUTY_COMPLETE=source deputy > {home}/deputy-complete.sh".format(home=home), shell=True)
+    subprocess.run("chmod u+x {home}/deputy-complete.sh".format(home=home), shell=True)
+    bash_command("{home}/deputy-complete.sh".format(home=home))
     printer.info("Done!")
 
 
