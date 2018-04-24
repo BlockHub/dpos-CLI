@@ -4,7 +4,7 @@ Howdy delegate! You have just been deputized!
 
 ### Installation
 
-Inside your python 3.6 virtual env:
+Install python 3.6
 
 ```commandline
 sudo add-apt-repository ppa:deadsnakes/ppa
