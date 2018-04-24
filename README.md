@@ -6,7 +6,29 @@ Howdy delegate! You have just been deputized!
 
 Inside your python 3.6 virtual env:
 
-```bash
+```commandline
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt-get update
+sudo apt-get install python3.6-dev
+
+wget https://bootstrap.pypa.io/get-pip.py
+sudo python3.6 get-pip.py
+sudo pip3.6 install virtualenv
+```
+
+Create a virtual environment (replace myvirtualenv with whatever seems appriopriate, for example deputy)
+
+```commandline
+virtualenv myvirtualenv -p python3.6
+```
+
+Activate the virtualenv.
+
+```commandline
+source myvirtualenv/bin/activate
+```
+
+```commandline
 pip install dpos-deputy
 ```
 
@@ -16,7 +38,7 @@ Deputy requires running ark-node instances/other network nodes like Kapu or Pers
 
 Start out by enabling autocompletion for an easier time.
 
-```bash
+```commandline
 deputy enable_autocomplete
 ```
 
@@ -31,7 +53,17 @@ deputy --help
 ### Starting out
 Start out by setting your configurations for further use.
 
-```bash
+```commandline
 deputy set_config --help
 ```
+
+### Example command
+Setting up your configuration:
+
+```commandline
+deputy -p mypassword set_config
+```
+
+This will lead you through a series of prompts to store persistent configurations. If you don't use a 
+password, deputy will default to default_password for encryption purposes. 
 
