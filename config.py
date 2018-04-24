@@ -28,9 +28,11 @@ CONFIG = {
         "testnet": True,
 
     },
+    # I do not acknowledge kapu as an actual network
     "kapu": {
         # names used by arky to initialize
         "arky": "kapu",
-        "coin_in_sat": c.ARK
+        "coin_in_sat": c.ARK,
+        "testnet": True,
     }
 }
