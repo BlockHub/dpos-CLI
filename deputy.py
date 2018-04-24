@@ -90,7 +90,7 @@ def main(ctx, config_file, password, verbose):
 
     Currently supports:
         Ark
-        DArk
+        devnet-Ark
         Kapu
         Test-Persona
     """
