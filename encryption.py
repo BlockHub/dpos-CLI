@@ -7,7 +7,7 @@ from simplecrypt import encrypt, decrypt
 class Crypt:
 
     def encrypt(self, string, password):
-        return encrypt(password, string)
+        return encrypt(password=password, data=string)
 
     def decrypt(self, crypt, password):
-        return decrypt(password, crypt).decode("utf-8")
+        return decrypt(password=password, data=crypt).decode("utf-8")

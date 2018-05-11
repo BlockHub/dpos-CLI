@@ -7,7 +7,7 @@ def readme():
 
 setup(
     name='dpos-deputy',
-    version='0.0.17',
+    version='0.0.32',
     packages=[''],
     long_description=readme(),
     url='https://github.com/BlockHub/dpos-deputy',

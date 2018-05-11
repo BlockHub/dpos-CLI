@@ -4,7 +4,6 @@ import pickle
 import exceptions as e
 from config import CONFIG
 from functions import Payouts
-from dpostools.constants import ARK
 from pprint import pprint
 from encryption import Crypt
 import constants as c
@@ -39,7 +38,7 @@ def load_config(ctx, network):
 
 class Verbose:
     def __init__(self, level, dsn=None):
-        self.level = level
+        self.level = int(level)
         self.logger = logging.getLogger(__name__)
         if dsn:
             self.handler = SentryHandler(dsn)
@@ -56,7 +55,7 @@ class Verbose:
             click.echo(message=text, color=color)
 
     def log(self, text, color=None):
-        self.logger.log(2.5, text)
+        self.logger.log(30, text)
         if self.level <= 30:
             click.echo(message=text, color=color)
 
@@ -72,8 +71,8 @@ class Verbose:
     type=click.Path(),
     default='/tmp/.dpos-CLI.cfg',
     help=h.CONFIG_FILE)
-@click.option(
-    '--password', '-p',
+@click.password_option(
+    '--encryption_password', '-p',
     type=click.STRING,
     hide_input=True,
     confirmation_prompt=True,
@@ -84,17 +83,21 @@ class Verbose:
     default="20",
     help=h.VERBOSE)
 @click.pass_context
-def main(ctx, config_file, password, verbose):
+def main(ctx, config_file, encryption_password, verbose):
     """
     Command line tool for delegates
 
     Currently supports:
+
         Ark
         devnet-Ark
         Kapu
         Test-Persona
+        Persona
+
     """
     printer = Verbose(level=int(verbose))
+    password = encryption_password
 
     filename = os.path.expanduser(config_file)
     config = CONFIG
@@ -125,6 +128,7 @@ def main(ctx, config_file, password, verbose):
     ctx.obj = {
         'config': config,
         'printer': printer,
+        'pw': password
 
     }
 
@@ -172,19 +176,14 @@ def enable_autocomplete(ctx):
     type=click.STRING,
     nargs=2,
     help=h.SETTING)
-@click.option(
-    '--password', '-p',
-    type=click.STRING,
-    hide_input=True,
-    confirmation_prompt=True,
-    help=h.PASSWORD)
 @click.pass_context
-def set_config(ctx, network, password, setting):
+def set_config(ctx, network, setting):
     """
     Store configuration values in a file, e.g. the API key for OpenWeatherMap.
     """
     config = ctx.obj['config']
     printer = ctx.obj['printer']
+    password = ctx.obj['pw']
 
     if not config["virgin"]:
         if not click.confirm("Override or add to previously set settings?", abort=True):
@@ -202,10 +201,11 @@ def set_config(ctx, network, password, setting):
         config[network]["db_name"] = click.prompt("Please enter the name of the postgres database hosting the network")
         config[network]["db_host"] = click.prompt("Please enter the host of the database (probably localhost)")
         config[network]["db_user"] = click.prompt("Please enter the name of the postgres user")
-        config[network]["db_password"] = click.prompt("Please enter the password of the postgres user", hide_input=True)
+        config[network]["db_password"] = click.prompt("Please enter the password of the postgres user", hide_input=True, confirmation_prompt=True)
 
         config[network]["delegate_address"] = click.prompt("Please enter your delegate address")
         config[network]["delegate_pubkey"] = click.prompt("Please enter your delegate pubkey")
+
         # passphrases are a list: passphrase, encryption status (True means encrypted)
         if click.confirm("Do want to store your passphrase?"):
             config[network]["delegate_passphrase"] = [click.prompt("Please enter your delegate passphrase"), False]
@@ -220,14 +220,11 @@ def set_config(ctx, network, password, setting):
         config[network]["share"] = click.prompt("Please enter your share percentage as a ratio (100% = 1, 50% = 0.5)", type=float)
         v.share_validator(None, None, config[network]["share"])
 
-        config[network]["max_weight"] = ARK * click.prompt("Please enter the max balance that a voter may have in Ark (not arktoshi), "
-                                                           "use 'inf' if you do not want to set a maximum (remaining staking reward gets distributed over other voters", type=float)
+        config[network]["max_weight"] = config[network]["coin_in_sat"] * click.prompt("Please enter the max balance that a voter may have in {coin} (not {coin}toshi), "
+                                                           "use 'inf' if you do not want to set a maximum (remaining staking reward gets distributed over other voters".format(coin=network), type=float)
         config[network]["cover_fees"] = click.confirm("Do you wish to cover transaction fees for your voters?")
         config[network]["min_share"] = click.prompt("What is the minimum built up balance a voter needs before receiving a payout?", type=float)
-        config[network]["rewards_wallet"] = click.prompt("To which address should the rewards be sent?", type=str)
-
-
-
+        config[network]["rewardswallet"] = click.prompt("To which address should the rewards be sent?", type=str)
         config[network]["message"] = click.prompt("Enter a message to send to your voters on payouts (if you don't want to send a message, leave it empty)")
 
         if click.confirm("Do you wish to blacklist voters?"):
@@ -249,7 +246,6 @@ def set_config(ctx, network, password, setting):
             config[network]["db_host_{}_admin".format(network)] = click.prompt("Please enter the host of the database (probably localhost)")
             config[network]["db_user_{}_admin".format(network)] = click.prompt("Please enter the name of the postgres user")
             config[network]["db_password_{}_admin".format(network)] = click.prompt("Please enter the password of the postgres user", hide_input=True)
-
 
     # Incase we are setting a value specifically through the CLI as a shortcut
     else:
@@ -281,7 +277,7 @@ def set_config(ctx, network, password, setting):
     default=False,
     help=h.SHOW_SECRET)
 @click.pass_context
-def inspect_config(ctx, sh):
+def inspect_config(ctx, show_secret):
     """
     Check my previously set configurations.
     """
@@ -291,7 +287,7 @@ def inspect_config(ctx, sh):
         if type(config[network]) == dict:
             printer.info(network.upper())
             for i in config[network]:
-                if "passphrase" in i and not sh:
+                if "passphrase" in i and not show_secret:
                     print("----", i, "---", "CENSORED PASSPHRASE")
                 else:
                     print("----", i, "---", config[network][i])
@@ -469,20 +465,22 @@ def payout_voters(ctx, network, cover_fees, max_weight, share, min_share, messag
     setting, printer = load_config(ctx, network)
 
     if cover_fees is None:
-        cover_fees = setting["share"]
+        cover_fees = setting["cover_fees"]
     if min_share is None:
         min_share = setting["min_share"]
     if max_weight is None:
         max_weight = setting["max_weight"]
     if message is None:
         message = setting["message"]
+    if share is None:
+        share = setting["share"]
 
-    with PidFile():
+    with PidFile(piddir='/tmp/'):
         printer.log("starting payment run")
         payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                         db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
-                        pubkey=setting["delegate_pubkey"], rewardswallet=setting["rewardswallet"], passphrase=setting["delegate_passphrase"],
-                        second_passphrase=setting["delegate_second_passphrase"] if setting["delegate_second_passphrase"] else None,
+                        pubkey=setting["delegate_pubkey"], rewardswallet=setting["rewardswallet"], passphrase=setting["delegate_passphrase"][0],
+                        second_passphrase=setting["delegate_second_passphrase"][0] if setting["delegate_second_passphrase"][0] else None,
                         printer=printer, arky_network_name=setting["arky"])
         max_weight *= setting["coin_in_sat"]
 
@@ -535,7 +533,7 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards
     if shared_percentage is None:
         shared_percentage = setting["share"]
     if rewards_wallet is None:
-        rewards_wallet = setting["rewards_wallet"]
+        rewards_wallet = setting["rewardswallet"]
 
     calculator = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                          db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
@@ -546,7 +544,7 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards
         covered_fees=covered_fees,
         shared_percentage=shared_percentage
     )
-    printer.info("The built up share for the delegate is: {}".format(delegate_share/ARK))
+    printer.info("The built up share for the delegate is: {}".format(delegate_share/setting['coin_in_sat']))
 
 
 @main.command()
@@ -588,15 +586,17 @@ def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip, reward
     if shared_percentage is None:
         shared_percentage = setting["share"]
     if rewards_wallet is None:
-        rewards_wallet = setting["rewards_wallet"]
+        rewards_wallet = setting["rewardswallet"]
 
-    with PidFile():
+    with PidFile(piddir='/tmp/'):
 
         printer.log("Calculating delegate reward")
+
         payer = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                         db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
                         pubkey=setting["delegate_pubkey"], arky_network_name=setting["arky"],
-                        printer=printer, rewardswallet=rewards_wallet)
+                        printer=printer, rewardswallet=rewards_wallet, passphrase=setting["delegate_passphrase"][0],
+                        second_passphrase=setting["delegate_second_passphrase"][0])
 
         printer.log("Sending payment to delegate rewardswallet")
         payer.pay_rewardswallet(covered_fees=covered_fees, shared_percentage=shared_percentage)

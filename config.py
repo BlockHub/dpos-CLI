@@ -34,5 +34,11 @@ CONFIG = {
         "arky": "kapu",
         "coin_in_sat": c.ARK,
         "testnet": True,
+    },
+    "persona": {
+        # names used by arky to initialize
+        "arky": "prs",
+        "coin_in_sat": c.ARK,
+        "testnet": True,
     }
 }

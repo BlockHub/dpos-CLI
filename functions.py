@@ -1,8 +1,5 @@
 import dpostools.legacy as legacy
-from constants import ARK
 import arky.rest
-import exceptions as e
-import time
 from config import CONFIG
 
 
@@ -44,7 +41,7 @@ class Payouts:
         self.printer.debug("formatting raw payouts")
         for i in payouts_dict:
             if not cover_fees:
-                payouts_dict[i]["share"] -= 0.1 * ARK
+                payouts_dict[i]["share"] -= 0.1 * CONFIG[self.network]['coin_in_sat']
             payouts_dict[i]["share"] *= share
             self.printer.debug(payouts_dict[i])
         return payouts_dict
@@ -68,7 +65,7 @@ class Payouts:
             else:
                 self.printer.debug("Insufficient built up balance for {}".format(payouts[ark_address]))
 
-    def pay_voters(self, cover_fees, max_weight, share, message=None):
+    def pay_voters(self, cover_fees, max_weight, share, min_share, message=None):
         self.printer.debug("calculating voter payouts")
         payouts = self.calculate_payouts(
             cover_fees=cover_fees,
@@ -77,7 +74,9 @@ class Payouts:
         self.printer.debug("starting payment transmission")
         self.transmit_payments(
             payouts,
-            message=message)
+            message=message,
+            min_share=min_share
+        )
         self.printer.debug("transmission successful")
 
     def calculate_delegate_share(self, covered_fees, shared_percentage):
@@ -105,7 +104,7 @@ class Payouts:
         delegate_share = 0
 
         if covered_fees:
-            txfee = 0.1 * ARK
+            txfee = 0.1 * CONFIG[self.network]['coin_in_sat']
         else:
             txfee = 0
 
@@ -129,14 +128,19 @@ class Payouts:
         share = self.calculate_delegate_share(
             covered_fees=covered_fees,
             shared_percentage=shared_percentage)
+        self.printer.debug("calculated share is {}".format(share))
 
-        arky.core.sendToken(
-            share,
-            self.rewardswallet,
-            self.delegate_passphrase,
+        self.printer.debug(text=("share:", share, "recipientId:", self.rewardswallet, "secret:", self.delegate_passphrase,
+                           "secondSecret:", self.delegate_second_passphrase, "Vendorfield:", message))
+
+        res = arky.core.sendToken(
+            amount=share,
+            recipientId=self.rewardswallet,
+            secret=self.delegate_passphrase,
             # defaults to None if not initialized.
-            secondSecret=self.delegate_second_passphrase,
+            secondSecret=self.delegate_second_passphrase if self.delegate_second_passphrase else None,
             vendorField=message if message else "Delegate's reward share.")
+        self.printer.debug(res)
 
     def tip(self):
         arky.rest.use(self.arky_network_name)
