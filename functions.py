@@ -105,8 +105,6 @@ class Payouts:
         else:
             last_reward_payout = last_reward_payout[0]
 
-        last_reward_payout = 0
-
         payouts = legacy.DbCursor().execute_and_fetchall("""
             SELECT SUM(transactions."amount"), SUM(transactions."fee")
             FROM transactions 
@@ -120,7 +118,7 @@ class Payouts:
         blocks = legacy.Delegate.blocks(self.delegate_pubkey)
 
         if covered_fees:
-            print(payouts)
+
             delegate_share = float(payouts[0][0]) * (1 - shared_percentage) - float(payouts[0][1])
         else:
             delegate_share = float(payouts[0]) * (1-shared_percentage)
