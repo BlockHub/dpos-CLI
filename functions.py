@@ -84,44 +84,97 @@ class Payouts:
             host=self.db_host,
             database=self.db_name,
             user=self.db_user,
-            password=self.db_pw)
-
-        payouts = legacy.Address.transactions(self.delegate_address)
-        blocks = legacy.Delegate.blocks(self.delegate_pubkey)
+            password=self.db_pw
+        )
 
         last_reward_payout = legacy.DbCursor().execute_and_fetchone("""
-                SELECT transactions."timestamp"
-                FROM transactions
-                WHERE transactions."recipientId" = '{rewardwallet}'
-                AND transactions."senderId" = '{delegateaddress}'
-                ORDER BY transactions."timestamp" DESC 
-                LIMIT 1
-            """.format(
+                        SELECT blocks."timestamp"
+                        FROM transactions
+                        INNER JOIN blocks ON transactions."blockId" = blocks."id"
+                        WHERE transactions."recipientId" = '{rewardwallet}'
+                        AND transactions."senderId" = '{delegateaddress}'
+                        ORDER BY blocks."timestamp" DESC 
+                        LIMIT 1
+                    """.format(
             rewardwallet=self.rewardswallet,
             delegateaddress=self.delegate_address
-        ))[0]
+        ))
 
-        delegate_share = 0
+        if last_reward_payout is None:
+            last_reward_payout = 0
+        else:
+            last_reward_payout = last_reward_payout[0]
+
+        last_reward_payout = 0
+
+        payouts = legacy.DbCursor().execute_and_fetchall("""
+            SELECT SUM(transactions."amount"), SUM(transactions."fee")
+            FROM transactions 
+            INNER JOIN blocks on transactions."blockId" = blocks."id"
+            WHERE transactions."senderId" = '{del_address}' 
+            AND transactions."recipientId" != '{rewardswallet}'
+            AND blocks."timestamp" > {ts_last_payout};
+        """.format(del_address=self.delegate_address, ts_last_payout=last_reward_payout, rewardswallet=self.rewardswallet)
+        )
+
+        blocks = legacy.Delegate.blocks(self.delegate_pubkey)
 
         if covered_fees:
-            txfee = 0.1 * CONFIG[self.network]['coin_in_sat']
+            print(payouts)
+            delegate_share = float(payouts[0][0]) * (1 - shared_percentage) - float(payouts[0][1])
         else:
-            txfee = 0
-
-        for i in payouts:
-            if i.recipientId == self.rewardswallet:
-                del i
-            else:
-                if i.timestamp > last_reward_payout:
-                    total_send_amount = (i.amount + txfee) / shared_percentage
-                    delegate_share += total_send_amount - (
-                                total_send_amount * shared_percentage + txfee)
+            delegate_share = float(payouts[0]) * (1-shared_percentage)
 
         for b in blocks:
             if b.timestamp > last_reward_payout:
-                delegate_share += b.totalFee
+                        delegate_share += b.totalFee
 
         return delegate_share
+
+    # def calculate_delegate_share(self, covered_fees, shared_percentage):
+    #     legacy.set_connection(
+    #         host=self.db_host,
+    #         database=self.db_name,
+    #         user=self.db_user,
+    #         password=self.db_pw)
+    #
+    #     payouts = legacy.Address.transactions(self.delegate_address)
+    #     blocks = legacy.Delegate.blocks(self.delegate_pubkey)
+    #
+    #     last_reward_payout = legacy.DbCursor().execute_and_fetchone("""
+    #             SELECT transactions."timestamp"
+    #             FROM transactions
+    #             WHERE transactions."recipientId" = '{rewardwallet}'
+    #             AND transactions."senderId" = '{delegateaddress}'
+    #             ORDER BY transactions."timestamp" DESC
+    #             LIMIT 1
+    #         """.format(
+    #         rewardwallet=self.rewardswallet,
+    #         delegateaddress=self.delegate_address
+    #     ))[0]
+    #
+    #     delegate_share = 0
+    #
+    #     if covered_fees:
+    #         txfee = 0.1 * CONFIG[self.network]['coin_in_sat']
+    #     else:
+    #         txfee = 0
+    #
+    #     for i in payouts:
+    #         if i.recipientId == self.rewardswallet:
+    #             del i
+    #         else:
+    #             if i.timestamp > last_reward_payout:
+    #                 total_send_amount = (i.amount + txfee) / shared_percentage
+    #                 delegate_share += total_send_amount - (
+    #                             total_send_amount * shared_percentage + txfee)
+    #
+    #     for b in blocks:
+    #         if b.timestamp > last_reward_payout:
+    #             delegate_share += b.totalFee
+    #
+    #     return delegate_share
+    #
 
     def pay_rewardswallet(self, covered_fees, shared_percentage, message=None):
         arky.rest.use(self.arky_network_name)

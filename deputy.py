@@ -64,26 +64,19 @@ class Verbose:
         if self.level <= 40:
             click.echo(message=text, color=color)
 
-
 @click.group()
 @click.option(
     '--config-file', '-c',
     type=click.Path(),
     default='/tmp/.dpos-CLI.cfg',
     help=h.CONFIG_FILE)
-@click.password_option(
-    '--encryption_password', '-p',
-    type=click.STRING,
-    hide_input=True,
-    confirmation_prompt=True,
-    help=h.PASSWORD)
 @click.option(
     '--verbose', '-v',
     type=click.Choice(["0", "10", "20", "30", "40", "50"]),
     default="20",
     help=h.VERBOSE)
 @click.pass_context
-def main(ctx, config_file, encryption_password, verbose):
+def main(ctx, config_file, verbose):
     """
     Command line tool for delegates
 
@@ -97,7 +90,6 @@ def main(ctx, config_file, encryption_password, verbose):
 
     """
     printer = Verbose(level=int(verbose))
-    password = encryption_password
 
     filename = os.path.expanduser(config_file)
     config = CONFIG
@@ -106,30 +98,9 @@ def main(ctx, config_file, encryption_password, verbose):
         with open(filename, 'rb') as config_file:
             config = pickle.load(config_file)
 
-        for network in config:
-            if network == "virgin":
-                continue
-            try:
-                if config[network]["delegate_passphrase"][1]:
-                    printer.info("Decrypting primary passhrase")
-                    config[network]["delegate_passphrase"][0] = Crypt().decrypt(crypt=config[network]["delegate_passphrase"][0],
-                                                                             password=password)
-                    config[network]["delegate_passphrase"][1] = False
-                    printer.info("Decrypted!")
-                if config[network]["delegate_second_passphrase"][1]:
-                    printer.info("Decrypting secondary passphrase")
-                    config[network]["delegate_second_passphrase"][0] = Crypt().decrypt(
-                        crypt=config[network]["delegate_second_passphrase"][0], password=password)
-                    config[network]["delegate_second_passphrase"][1] = False
-                    printer.info("decrypted!")
-            except KeyError:
-                pass
-
     ctx.obj = {
         'config': config,
         'printer': printer,
-        'pw': password
-
     }
 
 @main.command()
@@ -166,9 +137,15 @@ def enable_autocomplete(ctx):
 
 
 @main.command()
+@click.password_option(
+    '--password', '-p',
+    type=click.STRING,
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     default=None,
     help=h.NETWORK)
 @click.option(
@@ -177,13 +154,12 @@ def enable_autocomplete(ctx):
     nargs=2,
     help=h.SETTING)
 @click.pass_context
-def set_config(ctx, network, setting):
+def set_config(ctx, network, setting, password):
     """
     Store configuration values in a file, e.g. the API key for OpenWeatherMap.
     """
     config = ctx.obj['config']
     printer = ctx.obj['printer']
-    password = ctx.obj['pw']
 
     if not config["virgin"]:
         if not click.confirm("Override or add to previously set settings?", abort=True):
@@ -229,13 +205,14 @@ def set_config(ctx, network, setting):
 
         if click.confirm("Do you wish to blacklist voters?"):
             want_blacklist = True
-            blacklist = []
+            blacklist = config[network]["blacklist"]
             while want_blacklist:
                 blacklist.append(click.prompt("enter an address to add to the blacklist"))
                 if click.confirm("Do you wish to blacklist more voters?"):
                     want_blacklist = True
                 else:
                     want_blacklist = False
+            config[network]["blacklist"] = blacklist
         if click.confirm("Do you wish to enable raven logging?"):
             config[network]["raven_dsn"] = click.prompt("Enter your raven DSN")
         else:
@@ -253,17 +230,7 @@ def set_config(ctx, network, setting):
         config[network][setting[0]] = setting[1]
 
     # Encrypting the passphrases.
-    if not config[network]["delegate_passphrase"][1] and config[network]["delegate_passphrase"][0]:
-        printer.info("encrypting primary passhrase")
-        config[network]["delegate_passphrase"][0] = Crypt().encrypt(string=config[network]["delegate_passphrase"][0], password=password)
-        config[network]["delegate_passphrase"][1] = True
-        printer.info("encrypted!")
-    if not config[network]["delegate_second_passphrase"][1] and config[network]["delegate_second_passphrase"][0]:
-        printer.info("encrypting secondary passphrase")
-        config[network]["delegate_second_passphrase"][0] = Crypt().encrypt(string=config[network]["delegate_second_passphrase"][0], password=password)
-        config[network]["delegate_second_passphrase"][1] = True
-        printer.info("encrypted!")
-
+    Crypt().encrypt_config(config, network, password, printer)
     printer.info("Saving your settings...")
     pickle.dump(config, open("/tmp/.dpos-CLI.cfg", "wb"))
     printer.info("Saved!")
@@ -271,18 +238,26 @@ def set_config(ctx, network, setting):
 
 
 @main.command()
+@click.password_option(
+    '--password', '-p',
+    type=click.STRING,
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.option(
     '--show_secret', '-sh',
     type=click.BOOL,
     default=False,
     help=h.SHOW_SECRET)
 @click.pass_context
-def inspect_config(ctx, show_secret):
+def inspect_config(ctx, show_secret, password):
     """
     Check my previously set configurations.
     """
     config = ctx.obj['config']
-    printer = ctx.obj['printer']
+    printer = ctx.obj["printer"]
+    Crypt().decrypt_config(config, password, printer)
+
     for network in config:
         if type(config[network]) == dict:
             printer.info(network.upper())
@@ -314,7 +289,7 @@ def inspect_config(ctx, show_secret):
     help=h.SHARE)
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     prompt=True,
     help=h.NETWORK)
 @click.option(
@@ -335,7 +310,7 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
     setting, printer = load_config(ctx, network)
 
     if cover_fees is None:
-        cover_fees = setting["share"]
+        cover_fees = setting["cover_fees"]
     if max_weight is None:
         max_weight = setting["max_weight"]
     if share is None:
@@ -416,6 +391,12 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
         payouts[x]["share"] /= c.ARK
         payouts[x]["balance"] /= c.ARK
 
+        try:
+            if x in setting["blacklist"]:
+                del payouts[x]
+        except KeyError:
+            pass
+
     if print:
         pprint(payouts)
         printer.info("Using the following configuration: \ncover_fees: {cf}\n max weight: {mw}\n share: {s}%\n".
@@ -426,6 +407,12 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
                )
 
 @main.command()
+@click.password_option(
+    '--password', '-p',
+    type=click.STRING,
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.option(
     '--message', '-m',
     type=click.STRING,
@@ -454,15 +441,18 @@ def calculate_payouts(ctx, network, cover_fees, max_weight, share, store, print)
     help=h.SHARE)
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     prompt=True,
     help=h.NETWORK)
 @click.pass_context
-def payout_voters(ctx, network, cover_fees, max_weight, share, min_share, message):
+def payout_voters(ctx, network, cover_fees, max_weight, share, min_share, message, password):
     """
     Calculate and transmit payments to the voters.
     """
-    setting, printer = load_config(ctx, network)
+    config = ctx.obj['config']
+    printer = ctx.obj["printer"]
+    Crypt().decrypt_config(config, password, printer)
+    setting = config[network]
 
     if cover_fees is None:
         cover_fees = setting["cover_fees"]
@@ -518,7 +508,7 @@ def payout_voters(ctx, network, cover_fees, max_weight, share, min_share, messag
     help=h.REWARDS_WALLET,)
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     prompt=True,
     help=h.NETWORK)
 @click.pass_context
@@ -526,14 +516,17 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards
     """
     Calculate the pending delegate reward.
     """
-    setting, printer = load_config(ctx, network)
+    config = ctx.obj["config"]
+    printer = ctx.obj["printer"]
+    setting = config[network]
 
     if covered_fees is None:
         covered_fees = setting["cover_fees"]
     if shared_percentage is None:
         shared_percentage = setting["share"]
     if rewards_wallet is None:
-        rewards_wallet = setting["rewardswallet"]
+        rewards_wallet = setting["rewardswall" \
+                                 "et"]
 
     calculator = Payouts(db_name=setting["db_name"], db_host=setting["db_host"], db_pw=setting["db_password"],
                          db_user=setting["db_user"], network=network, delegate_address=setting["delegate_address"],
@@ -548,9 +541,15 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards
 
 
 @main.command()
+@click.password_option(
+    '--password', '-p',
+    type=click.STRING,
+    hide_input=True,
+    confirmation_prompt=True,
+    help=h.PASSWORD)
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     prompt=True,
     help=h.NETWORK)
 @click.option(
@@ -575,11 +574,14 @@ def check_delegate_reward(ctx, network, covered_fees, shared_percentage, rewards
     default=True,
     help=h.TIP)
 @click.pass_context
-def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip, rewards_wallet):
+def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip, rewards_wallet, password):
     """
     Calculate and pay the current pending delegate reward share and transmit to the rewardwallet
     """
-    setting, printer = load_config(ctx, network)
+    config = ctx.obj["config"]
+    printer = ctx.obj["printer"]
+    Crypt().decrypt_config(config, password, printer)
+    setting = config["network"]
 
     if covered_fees is None:
         covered_fees = setting["cover_fees"]
@@ -609,7 +611,7 @@ def pay_rewardswallet(ctx, network, covered_fees, shared_percentage, tip, reward
 @main.command()
 @click.option(
     '--network', '-n',
-    type=click.Choice(list(CONFIG.keys())[1:]),
+    type=click.Choice([x for x in CONFIG.keys() if x != "virgin"]),
     prompt=True,
     help=h.NETWORK)
 @click.pass_context
